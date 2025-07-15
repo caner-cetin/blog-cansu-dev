@@ -85,6 +85,9 @@ Mosh uses UDP ports 60000-61000, so make sure your VPS firewall allows these por
 
 For better security, let's configure UFW to properly manage our server's firewall:
 
+(much needed edit here: do not allow all IP's to connect to these ports. my IP is constantly changing, I am traveling places, so I allowed all connecting IP's.
+if you can, while allowing the ports, whitelist only one IP address.)
+
 ```bash
 # Install UFW (usually pre-installed on Ubuntu)
 sudo apt install -y ufw
