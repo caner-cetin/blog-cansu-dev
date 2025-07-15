@@ -1,5 +1,6 @@
 ---
-layout: post.html
+layout: post
+title: "How to use old iPad as a dev environment"
 ---
 
 ### Hello!
