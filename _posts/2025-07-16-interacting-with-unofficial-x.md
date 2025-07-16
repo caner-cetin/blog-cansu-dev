@@ -364,6 +364,52 @@ func (h *Helicon) SaveTokensToKeyring() error {
 
 ### next steps
 
-With these tokens in hand, you can now make authenticated requests to Twitter/X's internal GraphQL endpoints. In the next part of this series, we'll explore how to use these tokens to fetch tweets, user profiles, and other data from the unofficial API.
+With these tokens in hand, you can now make authenticated requests to Twitter/X's internal GraphQL endpoints. 
 
-The full implementation is available in the [Helicon repository](https://github.com/caner-cetin/helicon) - feel free to contribute or report issues!
+### wait, how???
+
+well, thats the hardest part, and, hopefully I will cover this sooner or later.
+
+but I have an example for you! which you can [access here](https://github.com/caner-cetin/helicon/blob/master/tweet_detail.go)
+
+hitting API itself is not the hardest part. all you have to do is setting headers properly:
+
+```go
+// anonymous bearer token
+// dont mix with your own auth token
+req.Header.Set("Authorization", h.Cookies.BearerToken)
+req.Header.Set("X-Csrf-Token", h.Cookies.CSRFToken.Value)
+req.Header.Set("X-Twitter-Auth-Type", "OAuth2Session")
+req.Header.Set("X-Twitter-Active-User", "yes")
+req.Header.Set("X-Twitter-Client-Language", "en")
+req.Header.Set("Cookie", fmt.Sprintf("auth_token=%s; ct0=%s", h.Cookies.AuthToken.Value, h.Cookies.CSRFToken.Value))
+req.Header.Set("Accept", "*/*")
+req.Header.Set("User-Agent", h.UserAgent)
+```
+
+hardest part is constructing the URL for request because GQL is one giant mess.
+
+```go
+func (h *Helicon) hitApi(url string) ([]byte, error) {
+	req, _ := http.NewRequest(http.MethodGet, url, nil)
+	// see the code block above
+	h.setCommonHeaders(req)
+	resp, _ := http.DefaultClient.Do(req)
+	var respBody []byte
+	respBody, _ = io.ReadAll(resp.Body)
+	return respBody, nil
+}
+```
+this is all you need to hit the API. set headers and you are good to go. but.
+
+internal GQL calls are shaped like this
+```
+https://x.com/i/api/graphql/XXXX/TweetDetail
+```
+where the `X` is GraphQL query ID. Thats the hardest part. Its not a static query ID. With every update query ID changes. Good news is that, query IDs are also stored at main JS bundle so all we need is 600 lines of regex and some black magic to find all GQL ids.
+
+I highly recommend you to read this file to understand how messy API request // responses are: [read me pls](https://github.com/caner-cetin/helicon/blob/master/tweet_detail.go)
+
+### closing
+
+This is how far I have got with the library, ill start working on it again. Full implementation is available in the [Helicon repository](https://github.com/caner-cetin/helicon) - feel free to contribute or report issues!
