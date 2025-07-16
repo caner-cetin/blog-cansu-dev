@@ -14,21 +14,21 @@ Using this library may violate Twitter/X's Terms of Service. This can lead to ac
 
 ### intro
 
-this blog post is about Helicon, a project that I started quite a while ago and didnt go so far after authentication. Now that I am picking up this project again, I wanted to write a blog post about progression.
+This blog post is about Helicon, a project that I started quite a while ago and didn't go so far after authentication. Now that I am picking up this project again, I wanted to write a blog post about the progression and share how the authentication flow works.
 
 ### why?
 
-why Helicon, why unofficial API? one and only reason: official API pricing. 100$ is far too step for an API that once was completely free. you shouldnt pay 100$ for posting peugeot 206 pics daily, and, besides all fun things you could do with gimmick accounts, X API is not worth 100$. value of content you get out of 100$ is not even comparable to other pricegated trade // astronomy APIs. 
+Why Helicon, why unofficial API? One and only reason: official API pricing. $100 is far too steep for an API that once was completely free. You shouldn't pay $100 for posting Peugeot 206 pics daily, and besides all fun things you could do with gimmick accounts, X API is not worth $100. The value of content you get out of $100 is not even comparable to other price-gated trade or astronomy APIs.
 
-also, people are paying "unofficial x API resellers" way too much money. like, idk, 0.10$/1000 tweet information. unofficial API has no rate limits, no restriction, all you need is army of bot accounts to become a reseller. and GQL API is not a top secret information! its not like "unofficial API is too hard to use i must pay resellers", no, its actually pretty easy!
+Also, people are paying "unofficial X API resellers" way too much money - like $0.10 per 1000 tweet information. The unofficial API has no rate limits, no restrictions, all you need is an army of bot accounts to become a reseller. And the GraphQL API is not top secret information! It's not like "unofficial API is too hard to use, I must pay resellers" - no, it's actually pretty easy!
 
 ### how?
 
-we will(try to) interact with unofficial API using our library, Helicon. lets begin with the most fundamental and often the trickiest part: Authentication. Unlike traditional APIs that might use simple API keys or OAuth flows, Twitter/X's internal mechanisms is a bit different.
+We will (try to) interact with the unofficial API using our library, Helicon. Let's begin with the most fundamental and often the trickiest part: Authentication. Unlike traditional APIs that might use simple API keys or OAuth flows, Twitter/X's internal mechanisms are a bit different.
 
 ### more than just a login
 
-authenticating with X API isnt as simple as sending tokens, now you got the callback, here is your access tokens, etc., no, unofficial API is more than just a normal OAuth2 flow.
+Authenticating with X API isn't as simple as sending tokens - "now you got the callback, here are your access tokens, etc." No, the unofficial API is more than just a normal OAuth2 flow.
 
 here is a general overview of how authentication with unofficial API looks:
 
@@ -76,28 +76,75 @@ here is a general overview of how authentication with unofficial API looks:
 
 ### initial: anonymous token
 
-before we can even think about logging in, we need two tokens that grant us basic access to the Twitter/X API endpoints: an **Anonymous Bearer Token** and a Guest Token.
+Before we can even think about logging in, we need two tokens that grant us basic access to the Twitter/X API endpoints: an **Anonymous Bearer Token** and a **Guest Token**.
 
-**Anonymous Bearer Token** is a static token embedded within Twitter/X's main JavaScript bundle. It's used for initial client-to-server communication, even before a user logs in.
+The **Anonymous Bearer Token** is a static token embedded within Twitter/X's main JavaScript bundle. It's used for initial client-to-server communication, even before a user logs in.
 
-at our library code, `FindTwitterMainJavascriptUrl` function scrapes the login page HTML to find the URL of this dynamic JavaScript file.
+at our library code, `FindTwitterMainJavascriptUrl` function scrapes the login page HTML to find the URL of this dynamic JavaScript file:
 
-*`htmlContent` is html dump of login page, you can dump any pre-auth page html for this purpose*
-![findsrc](/assets/x-api-1.png)
+```go
+func (h *Helicon) FindTwitterMainJavascriptUrl() (*string, error) {
+	req, _ := http.NewRequest("GET", "https://x.com/i/flow/login/", nil)
+	req.Header.Set("User-Agent", h.UserAgent)
+	resp, _ := http.DefaultClient.Do(req)
+	defer resp.Body.Close()
 
-Once found, 
-`FindAnonymousBearerToken` then fetches JS file and extracts the Bearer token in same fashion.
-![findbearer](/assets/x-api-2.png)
+	body, _ := io.ReadAll(resp.Body)
+	htmlContent := string(body)
 
-Similarly, the `Guest Token` is also obtained by making an initial request to the login page. This token is often found in a `document.cookie` assignment within the HTML or as a `Set-Cookie` header, like `gt=12345...`
+	re := regexp.MustCompile(`src=["'](https://abs\.twimg\.com/responsive-web/client-web-legacy/main\.[\w.-]+\.js)["']`)
+	matches := re.FindStringSubmatch(htmlContent)
+	if len(matches) == 0 {
+		re = regexp.MustCompile(`src=["'](https://abs\.twimg\.com/responsive-web/client-web/main\.[\w.-]+\.js)["']`)
+		matches = re.FindStringSubmatch(htmlContent)
+	}
 
-![findguest](/assets/x-api-3.png)
+	scriptUri := strings.TrimPrefix(strings.TrimSuffix(matches[0], `"`), `src="`)
+	return &scriptUri, nil
+}
+```
+
+Once found, `FindAnonymousBearerToken` then fetches JS file and extracts the Bearer token:
+
+```go
+func (h *Helicon) FindAnonymousBearerToken() (*string, error) {
+	mainScriptUrl, _ := h.FindTwitterMainJavascriptUrl()
+	req, _ := http.NewRequest("GET", *mainScriptUrl, nil)
+	req.Header.Set("User-Agent", h.UserAgent)
+	resp, _ := http.DefaultClient.Do(req)
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	re := regexp.MustCompile("(Bearer)(.*?)(\"| \\z)")
+	matches := re.FindAll(body, -1)
+	match := string(matches[len(matches)-1])
+	match = strings.TrimPrefix(strings.TrimSuffix(match, `"`), `"`)
+	return &match, nil
+}
+```
+
+Similarly, the `Guest Token` is obtained by making an initial request to the login page and parsing the HTML for the cookie assignment:
+
+```go
+func (h *Helicon) GenerateGuestToken() (*string, error) {
+	req, _ := http.NewRequest("GET", "https://x.com/i/flow/login/", nil)
+	req.Header.Set("User-Agent", h.UserAgent)
+	resp, _ := http.DefaultClient.Do(req)
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	htmlContent := string(body)
+	re := regexp.MustCompile(`document\.cookie="gt=([0-9]+)`)
+	matches := re.FindStringSubmatch(htmlContent)
+	return &matches[1], nil
+}
+```
 
 now we have two necessary tokens in hand, lets proceed with `https://api.x.com/1.1/onboarding/task.json`, main authentication endpoint.
 
 ### auth flow
 
-authentication flow is done through one single endpoint, `task.json`.
+The authentication flow is done through one single endpoint, `task.json`. This endpoint handles the entire login process through a series of subtasks.
 ```json
 {
 	"input_flow_data": {
@@ -111,24 +158,37 @@ authentication flow is done through one single endpoint, `task.json`.
 }
 ```
 
-flow is specified with query parameters:
+The login flow is initiated with a POST request to the task endpoint:
 
 ```go
-req, err := http.NewRequest(http.MethodPost, "https://api.x.com/1.1/onboarding/task.json", strings.NewReader(body))
-q := req.URL.Query()
-q.Set("flow_name", "login")
-req.URL.RawQuery = q.Encode()
-```
+func (h *Helicon) StartLoginFlow() (*LoginFlow, error) {
+	anonymousToken, _ := h.FindAnonymousBearerToken()
+	guestId, _ := h.GenerateGuestToken()
 
-means that flow we are initiating is login flow.
+	body := `{
+		"input_flow_data": {
+			"flow_context": {
+				"debug_overrides": {},
+				"start_location": {
+					"location": "manual_link"
+				}
+			}
+		}
+	}`
 
-after that, attach the required tokens at headers and send the constructed request with default http client
-```go
-req.Header.Set("Authorization", *anonymousToken)
-req.Header.Set("x-guest-token", *guestId)
-req.Header.Set("User-Agent", h.UserAgent)
-req.Header.Set("Content-Type", "application/json")
-resp, err := http.DefaultClient.Do(req)
+	req, _ := http.NewRequest(http.MethodPost, "https://api.x.com/1.1/onboarding/task.json", strings.NewReader(body))
+	q := req.URL.Query()
+	q.Set("flow_name", "login")
+	req.URL.RawQuery = q.Encode()
+
+	req.Header.Set("Authorization", *anonymousToken)
+	req.Header.Set("x-guest-token", *guestId)
+	req.Header.Set("User-Agent", h.UserAgent)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, _ := http.DefaultClient.Do(req)
+	// Parse response into LoginFlow struct...
+}
 ```
 afterwards, initiated flow details will be sent from X in the format of:
 ```go
@@ -161,27 +221,147 @@ when we start the login flow, X responds with a `JsInstrumentationSubtask`, as a
 
 we can't just eval this JS in Go and we cant use JS engines, we need a full browser environment due to dependency on document API. we will use chromedp, a Go library for controlling Chrome DevTools Protocol, to spawn a headless Chrome instance.
 
-here is what I did:
+Here's how the JS challenge is solved:
 
-- launch  a headless Chrome instance.
-- inject the custom challenge JS snippet into the browser. snippet overrides `document.getElementsByName` to capture the ui_metrics value that the challenge script tries to set.
-- execute the challenge script within the headless browser.
-- wait for and extract the computed ui_metrics value.
+```go
+func (f *LoginFlow) solveJSInstrumentationChallenge(userAgent string) (*string, error) {
+	// Fetch the challenge script from X's servers
+	target := f.Subtasks[0].JsInstrumentation.Url
+	resp, _ := http.Get(target)
+	defer resp.Body.Close()
+	script, _ := io.ReadAll(resp.Body)
+	scriptContent := string(script)
 
-[you can read my implementation here](https://github.com/caner-cetin/helicon/blob/fa437f057bc94036009facf0021f75993970408c/twitter.go#L334)
+	// Setup headless Chrome
+	allocOpts := append(chromedp.DefaultExecAllocatorOptions[:],
+		chromedp.Flag("headless", true),
+		chromedp.Flag("disable-gpu", true),
+		chromedp.UserAgent(userAgent),
+		chromedp.NoSandbox,
+	)
+	allocCtx, cancelAlloc := chromedp.NewExecAllocator(context.Background(), allocOpts...)
+	defer cancelAlloc()
+	taskCtx, cancelTask := chromedp.NewContext(allocCtx)
+	defer cancelTask()
+```
 
-[and how I used the final captcha (?) value here](https://github.com/caner-cetin/helicon/blob/fa437f057bc94036009facf0021f75993970408c/twitter.go#L268)
+The core technique involves overriding `document.getElementsByName` to capture the ui_metrics value:
+
+```go
+	jsToEvaluate := fmt.Sprintf(`
+		(() => {
+			return new Promise((resolve, reject) => {
+				let resultToCapture;
+				const originalGetElementsByName = document.getElementsByName;
+				document.getElementsByName = function(name) {
+					if (name === 'ui_metrics') {
+						return [{ 
+							set value(val) {
+								resultToCapture = val;
+								resolve(resultToCapture);
+							}
+						}];
+					}
+					return originalGetElementsByName.apply(this, arguments);
+				};
+				eval(%s); // Execute the challenge script
+			});
+		})();
+	`, "`"+scriptContent+"`")
+
+	// Execute in browser and return the captured ui_metrics value
+	chromedp.Run(taskCtx, chromedp.Evaluate(jsToEvaluate, &evaluationResult))
+	return &result, nil
+}
+```
 
 ### submit credentials and cookies
 
-from this point and on its fairly easy. all we need to do is sending credentials for last step, [see here](https://github.com/caner-cetin/helicon/blob/fa437f057bc94036009facf0021f75993970408c/twitter.go#L488)
+from this point and on its fairly easy. all we need to do is sending credentials:
+
+```go
+func (f *LoginFlow) SubmitUsernameAndPassword(helicon *Helicon) error {
+	// First, submit username
+	submitUsernameBody := SubmitUsernameRequest{
+		FlowToken: f.FlowToken,
+		SubtaskInputs: []SubtaskInputs{{
+			SubtaskID: "LoginEnterUserIdentifierSSO",
+			SettingsList: SettingsList{
+				Link: "next_link",
+				SettingResponses: []SettingResponses{{
+					Key: "user_identifier",
+					ResponseData: ResponseData{
+						TextData: TextData{
+							Result: helicon.Credentials.Username,
+						},
+					},
+				}},
+			},
+		}},
+	}
+
+	// Submit username and get response
+	req, _ := http.NewRequest(http.MethodPost, "https://api.x.com/1.1/onboarding/task.json", body)
+	req.Header.Set("Authorization", f.AnonymousBearerToken)
+	req.Header.Set("x-guest-token", f.GuestToken)
+	resp, _ := http.DefaultClient.Do(req)
+	// Parse response...
+```
+
+Then submit the password in a similar fashion:
+
+```go
+	// Submit password
+	submitPasswordRequest := SubmitPasswordRequest{
+		FlowToken: submitUsernameResponse.FlowToken,
+		SubtaskInputs: []SubmitPasswordSubtaskInput{{
+			EnterPassword: EnterPassword{
+				Link:     "next_link",
+				Password: helicon.Credentials.Password,
+			},
+			SubtaskID: "LoginEnterPassword",
+		}},
+	}
+
+	// Submit password and capture session cookies
+	req, _ = http.NewRequest(http.MethodPost, "https://api.x.com/1.1/onboarding/task.json", body)
+	resp, _ = http.DefaultClient.Do(req)
+	// Extract auth_token and ct0 from Set-Cookie headers
+}
+```
 
 ### success?
 
 upon a successful password submission, Twitter/X returns session cookies in the Set-Cookie headers of the HTTP response. Specifically, we need:
 
-ct0: This is your CSRF (Cross-Site Request Forgery) token, vital for making subsequent authenticated requests.
-auth_token: This is your primary session token, indicating you are logged in.
+- **ct0**: This is your CSRF (Cross-Site Request Forgery) token, vital for making subsequent authenticated requests.
+- **auth_token**: This is your primary session token, indicating you are logged in.
 
+These tokens are then saved to the system keyring for future use:
 
-...wip.
+```go
+// Extract cookies from response headers
+for _, cookie := range resp.Cookies() {
+	switch cookie.Name {
+	case "ct0":
+		h.Credentials.CSRFToken = cookie.Value
+	case "auth_token":
+		h.Credentials.AuthToken = cookie.Value
+	}
+}
+
+// Save to keyring for persistence
+func (h *Helicon) SaveTokensToKeyring() error {
+	pass := fmt.Sprintf("%s|%s|%s", 
+		h.Credentials.CSRFToken, 
+		h.Credentials.BearerToken, 
+		h.Credentials.AuthToken)
+	return keyring.Set("helicon", h.Credentials.Username, pass)
+}
+```
+
+### next steps
+
+With these tokens in hand, you can now make authenticated requests to Twitter/X's internal GraphQL endpoints. In the next part of this series, we'll explore how to use these tokens to fetch tweets, user profiles, and other data from the unofficial API.
+
+The full implementation is available in the [Helicon repository](https://github.com/caner-cetin/helicon) - feel free to contribute or report issues!
