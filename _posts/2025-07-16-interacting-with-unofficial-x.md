@@ -279,6 +279,7 @@ The core technique involves overriding `document.getElementsByName` to capture t
 
 from this point and on its fairly easy. all we need to do is sending credentials:
 
+{% raw %}
 ```go
 func (f *LoginFlow) SubmitUsernameAndPassword(helicon *Helicon) error {
 	// First, submit username
@@ -329,6 +330,7 @@ Then submit the password in a similar fashion:
 	// Extract auth_token and ct0 from Set-Cookie headers
 }
 ```
+{% endraw %}
 
 ### success?
 
