@@ -74,12 +74,16 @@ table, th, td {
 code {
   color: white;
   background: black;
+  word-wrap: normal;
+  white-space: nowrap;
 }
 
-div.highlighter-rouge code {
+div.highlighter-rouge code, pre code {
   display: block;
   overflow-x: auto;
   white-space: pre;
+  word-wrap: normal;
+  word-break: normal;
   padding: 1rem;
 }
 
