@@ -27,6 +27,14 @@ plugins:
   - jekyll-seo-tag
   - jektex
 
+markdown: kramdown
+highlighter: rouge
+kramdown:
+  syntax_highlighter: rouge
+  syntax_highlighter_opts:
+    block:
+      line_numbers: false
+
 jektex:
   cache_dir: ".jektex-cache"
   ignore: ["*.xml"]
