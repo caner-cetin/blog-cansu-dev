@@ -6,8 +6,6 @@ entries:
     entries:
       - title: mail me
         url: "mailto:hello@cansu.dev"
-      - title: donate
-        url: "https://donate.cansu.dev"
       - title: open to work
         url: "https://resume.cansu.dev"
 
